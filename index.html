@@ -2,71 +2,101 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NUVIRCA — Acceso</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>NUVIRCA</title>
+<link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="icon" href="favicon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="NUVIRCA">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#F47A1F">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    background:linear-gradient(135deg,#F47A1F,#3A9E20);min-height:100vh;
-    display:flex;align-items:center;justify-content:center;padding:20px;color:#333}
+  html,body{height:100%;width:100%;overflow:hidden}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff}
+  #marco{position:fixed;inset:0;width:100%;height:100%;border:none;display:none}
+  #panel{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    padding:20px;background:linear-gradient(135deg,#F47A1F,#3A9E20)}
   .card{background:#fff;border-radius:18px;padding:34px 28px;max-width:380px;width:100%;
     box-shadow:0 12px 40px rgba(0,0,0,.25);text-align:center}
   img.logo{height:70px;margin-bottom:16px}
   h1{font-size:20px;color:#222;margin-bottom:8px}
-  p{font-size:14px;color:#666;line-height:1.5;margin-bottom:16px}
+  p{font-size:14px;color:#666;line-height:1.5;margin-bottom:14px}
   .spinner{width:38px;height:38px;border:4px solid #eee;border-top-color:#F47A1F;
     border-radius:50%;animation:spin 1s linear infinite;margin:14px auto}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .btn{display:inline-block;background:#F47A1F;color:#fff;text-decoration:none;
-    padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;margin-top:8px;border:none;cursor:pointer}
-  .btn.green{background:#3A9E20}
-  .estado{font-size:13px;color:#999;margin-top:14px;min-height:18px}
-  .offline{color:#C0392B}
+  .btn{display:inline-block;background:#F47A1F;color:#fff;text-decoration:none;border:none;
+    padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;margin-top:8px;cursor:pointer}
+  .estado{font-size:13px;color:#999;margin-top:12px;min-height:18px}
 </style>
 </head>
 <body>
-  <div class="card">
-    <img src="logo.png" class="logo" onerror="this.style.display='none'">
-    <h1>NUVIRCA</h1>
-    <div id="contenido">
-      <div class="spinner"></div>
-      <p>Conectando con el sistema...</p>
+  <iframe id="marco" allow="camera;microphone;clipboard-write"></iframe>
+
+  <div id="panel">
+    <div class="card">
+      <img src="logo.png" class="logo" onerror="this.style.display='none'">
+      <h1>NUVIRCA</h1>
+      <div id="contenido">
+        <div class="spinner"></div>
+        <p>Conectando con el sistema...</p>
+      </div>
+      <div class="estado" id="estado"></div>
     </div>
-    <div class="estado" id="estado"></div>
   </div>
 
 <script>
-// Esta pagina lee la direccion actual del sistema (que la PC publica al arrancar)
-// y redirige automaticamente. Si no esta disponible, avisa al usuario.
+// La pagina puente MANTIENE SIEMPRE su direccion fija (alernv-cloud.github.io/nuvirca).
+// Lee la direccion vigente del sistema (que la PC publica) y la carga.
+//
+// - Si la app esta INSTALADA (modo standalone): carga el sistema DENTRO de un
+//   marco (iframe), para que el icono nunca apunte a una direccion vieja.
+// - Si se abre en el navegador normal: redirige directo (mas simple).
+
+function estaInstalada(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+}
+
+async function obtenerUrl(){
+  const r=await fetch('direccion.json?t='+Date.now(),{cache:'no-store'});
+  if(!r.ok) throw new Error('sin archivo');
+  const d=await r.json();
+  if(!(d && d.url && d.url.startsWith('http'))) throw new Error('sin url');
+  return d.url;
+}
 
 async function conectar(){
   const estado=document.getElementById('estado');
   const contenido=document.getElementById('contenido');
+  const panel=document.getElementById('panel');
+  const marco=document.getElementById('marco');
   try{
-    // Leer el archivo con la direccion vigente (se evita cache con un parametro de tiempo)
-    const r=await fetch('direccion.json?t='+Date.now(),{cache:'no-store'});
-    if(!r.ok) throw new Error('sin archivo');
-    const d=await r.json();
-    if(d && d.url && d.url.startsWith('http')){
-      // Redirigir al sistema
+    const url=await obtenerUrl();
+    estado.textContent='Verificando el sistema...';
+    let vivo=false;
+    try{ await fetch(url,{mode:'no-cors',cache:'no-store'}); vivo=true; }
+    catch(e){ vivo=false; }
+    if(!vivo) throw new Error('sistema no responde');
+
+    if(estaInstalada()){
+      // Instalada: cargar dentro del marco para no perder la direccion fija
+      marco.src=url;
+      marco.style.display='block';
+      panel.style.display='none';
+    } else {
+      // Navegador normal: redirigir directo
       estado.textContent='Entrando al sistema...';
-      window.location.replace(d.url);
-      return;
+      window.location.replace(url);
     }
-    throw new Error('sin url');
   }catch(e){
-    // No hay direccion disponible: la PC probablemente esta apagada
-    contenido.innerHTML=`
-      <h1 style="color:#C0392B;font-size:18px;margin-bottom:10px">Sistema no disponible</h1>
-      <p>No se pudo conectar ahora mismo. Esto suele pasar si la
-      computadora del sistema esta apagada o el acceso aun no se ha iniciado.</p>
-      <p>Pide que enciendan el sistema en la PC y vuelve a intentar.</p>
-      <button class="btn" onclick="location.reload()">🔄 Reintentar</button>`;
+    contenido.innerHTML='<h1 style="color:#C0392B;font-size:18px;margin-bottom:10px">Sistema no disponible</h1>'+
+      '<p>No se pudo conectar ahora mismo. Esto suele pasar si la computadora '+
+      'del sistema esta apagada o el acceso aun no se ha iniciado.</p>'+
+      '<p>Pide que enciendan el sistema en la PC (ACCESO-AUTO.bat) y reintenta.</p>'+
+      '<button class="btn" onclick="location.reload()">🔄 Reintentar</button>';
     estado.textContent='';
   }
 }
