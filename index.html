@@ -19,17 +19,21 @@
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff}
   #marco{position:fixed;inset:0;width:100%;height:100%;border:none;display:none}
   #panel{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-    padding:20px;background:linear-gradient(135deg,#F47A1F,#3A9E20)}
-  .card{background:#fff;border-radius:18px;padding:34px 28px;max-width:380px;width:100%;
+    padding:20px;background:linear-gradient(135deg,#F47A1F,#3A9E20);overflow-y:auto}
+  .card{background:#fff;border-radius:18px;padding:30px 24px;max-width:380px;width:100%;
     box-shadow:0 12px 40px rgba(0,0,0,.25);text-align:center}
-  img.logo{height:70px;margin-bottom:16px}
-  h1{font-size:20px;color:#222;margin-bottom:8px}
+  img.logo{height:64px;margin-bottom:14px}
+  h1{font-size:20px;color:#222;margin-bottom:6px}
   p{font-size:14px;color:#666;line-height:1.5;margin-bottom:14px}
-  .spinner{width:38px;height:38px;border:4px solid #eee;border-top-color:#F47A1F;
+  .spinner{width:36px;height:36px;border:4px solid #eee;border-top-color:#F47A1F;
     border-radius:50%;animation:spin 1s linear infinite;margin:14px auto}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .btn{display:inline-block;background:#F47A1F;color:#fff;text-decoration:none;border:none;
-    padding:13px 26px;border-radius:10px;font-size:15px;font-weight:600;margin-top:8px;cursor:pointer}
+  .btn{display:block;width:100%;background:#F47A1F;color:#fff;text-decoration:none;border:none;
+    padding:14px;border-radius:11px;font-size:16px;font-weight:600;margin-top:10px;cursor:pointer}
+  .btn.green{background:#3A9E20}
+  .aviso{background:#FFF7ED;border:1px solid #FED7AA;border-radius:11px;padding:13px;
+    margin-top:16px;font-size:13px;color:#9A3412;text-align:left;line-height:1.5}
+  .aviso b{color:#7C2D12}
   .estado{font-size:13px;color:#999;margin-top:12px;min-height:18px}
 </style>
 </head>
@@ -49,15 +53,23 @@
   </div>
 
 <script>
-// La pagina puente MANTIENE SIEMPRE su direccion fija (alernv-cloud.github.io/nuvirca).
-// Lee la direccion vigente del sistema (que la PC publica) y la carga.
-//
-// - Si la app esta INSTALADA (modo standalone): carga el sistema DENTRO de un
-//   marco (iframe), para que el icono nunca apunte a una direccion vieja.
-// - Si se abre en el navegador normal: redirige directo (mas simple).
+// La pagina puente MANTIENE SIEMPRE su direccion fija.
+// - Si la app esta INSTALADA: carga el sistema DENTRO de un marco (iframe),
+//   sin cambiar la direccion, para que el icono no quede apuntando a una
+//   direccion vieja.
+// - Si se abre en el NAVEGADOR (no instalada): NO redirige sola. Muestra un
+//   boton "Entrar" y el aviso para instalar primero, dando tiempo a hacerlo.
+
+let _urlSistema=null;
+let _deferredPrompt=null;
+
+window.addEventListener('beforeinstallprompt',(e)=>{ e.preventDefault(); _deferredPrompt=e; });
 
 function estaInstalada(){
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+}
+function esIOS(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
 }
 
 async function obtenerUrl(){
@@ -68,39 +80,74 @@ async function obtenerUrl(){
   return d.url;
 }
 
-async function conectar(){
-  const estado=document.getElementById('estado');
-  const contenido=document.getElementById('contenido');
+async function sistemaVivo(url){
+  try{ await fetch(url,{mode:'no-cors',cache:'no-store'}); return true; }
+  catch(e){ return false; }
+}
+
+function entrarAlSistema(){
   const panel=document.getElementById('panel');
   const marco=document.getElementById('marco');
+  marco.src=_urlSistema;
+  marco.style.display='block';
+  panel.style.display='none';
+}
+
+function mostrarError(){
+  document.getElementById('contenido').innerHTML=
+    '<h1 style="color:#C0392B;font-size:18px;margin-bottom:10px">Sistema no disponible</h1>'+
+    '<p>No se pudo conectar ahora mismo. Esto suele pasar si la computadora '+
+    'del sistema esta apagada o el acceso aun no se ha iniciado.</p>'+
+    '<p>Pide que enciendan el sistema en la PC (ACCESO-AUTO.bat) y reintenta.</p>'+
+    '<button class="btn" onclick="location.reload()">🔄 Reintentar</button>';
+  document.getElementById('estado').textContent='';
+}
+
+function mostrarEntrada(){
+  // Pantalla cuando se abre en el navegador (no instalada): boton Entrar + aviso instalar
+  const contenido=document.getElementById('contenido');
+  let avisoInstalar='';
+  if(esIOS()){
+    avisoInstalar='<div class="aviso">Para tenerlo como app: toca <b>Compartir</b> '+
+      '(el cuadro con flecha ↑) y elige <b>"Agregar a inicio"</b>. Luego abre NUVIRCA '+
+      'desde el icono.</div>';
+  } else {
+    avisoInstalar='<div class="aviso">Para tenerlo como app: abre el menu del navegador '+
+      '(3 puntos) y elige <b>"Instalar app"</b> o <b>"Agregar a pantalla de inicio"</b>. '+
+      'Luego abre NUVIRCA desde el icono.</div>';
+  }
+  contenido.innerHTML=
+    '<p>El sistema esta disponible. Toca para entrar:</p>'+
+    '<button class="btn green" onclick="entrarAlSistema()">Entrar al sistema</button>'+
+    avisoInstalar;
+  // Boton de instalar directo en Android si el navegador lo permite
+  if(_deferredPrompt){
+    const b=document.createElement('button');
+    b.className='btn'; b.textContent='📲 Instalar app';
+    b.onclick=async()=>{ _deferredPrompt.prompt(); await _deferredPrompt.userChoice; _deferredPrompt=null; b.remove(); };
+    contenido.appendChild(b);
+  }
+  document.getElementById('estado').textContent='';
+}
+
+async function iniciar(){
+  const estado=document.getElementById('estado');
   try{
-    const url=await obtenerUrl();
+    _urlSistema=await obtenerUrl();
     estado.textContent='Verificando el sistema...';
-    let vivo=false;
-    try{ await fetch(url,{mode:'no-cors',cache:'no-store'}); vivo=true; }
-    catch(e){ vivo=false; }
-    if(!vivo) throw new Error('sistema no responde');
+    const vivo=await sistemaVivo(_urlSistema);
+    if(!vivo){ mostrarError(); return; }
 
     if(estaInstalada()){
-      // Instalada: cargar dentro del marco para no perder la direccion fija
-      marco.src=url;
-      marco.style.display='block';
-      panel.style.display='none';
+      // Instalada: entrar directo, dentro del marco (mantiene direccion fija)
+      entrarAlSistema();
     } else {
-      // Navegador normal: redirigir directo
-      estado.textContent='Entrando al sistema...';
-      window.location.replace(url);
+      // Navegador: mostrar boton Entrar + opcion instalar (no redirige solo)
+      mostrarEntrada();
     }
-  }catch(e){
-    contenido.innerHTML='<h1 style="color:#C0392B;font-size:18px;margin-bottom:10px">Sistema no disponible</h1>'+
-      '<p>No se pudo conectar ahora mismo. Esto suele pasar si la computadora '+
-      'del sistema esta apagada o el acceso aun no se ha iniciado.</p>'+
-      '<p>Pide que enciendan el sistema en la PC (ACCESO-AUTO.bat) y reintenta.</p>'+
-      '<button class="btn" onclick="location.reload()">🔄 Reintentar</button>';
-    estado.textContent='';
-  }
+  }catch(e){ mostrarError(); }
 }
-conectar();
+iniciar();
 </script>
 </body>
 </html>
