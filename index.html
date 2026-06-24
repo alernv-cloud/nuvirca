@@ -81,8 +81,26 @@ async function obtenerUrl(){
 }
 
 async function sistemaVivo(url){
-  try{ await fetch(url,{mode:'no-cors',cache:'no-store'}); return true; }
-  catch(e){ return false; }
+  // Comprueba si el túnel responde, con un timeout corto para no colgarse.
+  try{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(), 6000);
+    await fetch(url,{mode:'no-cors',cache:'no-store',signal:ctrl.signal});
+    clearTimeout(t);
+    return true;
+  }catch(e){ return false; }
+}
+
+async function esperarSistema(url){
+  // El túnel de Cloudflare recién creado tarda unos segundos en ser alcanzable.
+  // Reintentamos varias veces antes de rendirnos, mostrando el progreso.
+  const estado=document.getElementById('estado');
+  for(let i=0;i<6;i++){
+    if(await sistemaVivo(url)) return true;
+    estado.textContent='Esperando a que el sistema responda… ('+(i+1)+'/6)';
+    await new Promise(r=>setTimeout(r, 3000));
+  }
+  return false;
 }
 
 function entrarAlSistema(){
@@ -96,9 +114,9 @@ function entrarAlSistema(){
 function mostrarError(){
   document.getElementById('contenido').innerHTML=
     '<h1 style="color:#C0392B;font-size:18px;margin-bottom:10px">Sistema no disponible</h1>'+
-    '<p>No se pudo conectar ahora mismo. Esto suele pasar si la computadora '+
-    'del sistema esta apagada o el acceso aun no se ha iniciado.</p>'+
-    '<p>Pide que enciendan el sistema en la PC (ACCESO-AUTO.bat) y reintenta.</p>'+
+    '<p>No se pudo conectar todavía. Si acabas de iniciar el acceso en la PC '+
+    '(ACCESO-AUTO.bat), el túnel puede tardar hasta un minuto en estar listo.</p>'+
+    '<p>Espera unos segundos y pulsa Reintentar. Si la PC está apagada, enciéndela primero.</p>'+
     '<button class="btn" onclick="location.reload()">🔄 Reintentar</button>';
   document.getElementById('estado').textContent='';
 }
@@ -135,7 +153,7 @@ async function iniciar(){
   try{
     _urlSistema=await obtenerUrl();
     estado.textContent='Verificando el sistema...';
-    const vivo=await sistemaVivo(_urlSistema);
+    const vivo=await esperarSistema(_urlSistema);
     if(!vivo){ mostrarError(); return; }
 
     if(estaInstalada()){
