@@ -73,11 +73,39 @@ function esIOS(){
 }
 
 async function obtenerUrl(){
-  const r=await fetch('direccion.json?t='+Date.now(),{cache:'no-store'});
-  if(!r.ok) throw new Error('sin archivo');
-  const d=await r.json();
-  if(!(d && d.url && d.url.startsWith('http'))) throw new Error('sin url');
-  return d.url;
+  // Leemos direccion.json de DOS fuentes y nos quedamos con la más reciente:
+  //  1) raw.githubusercontent.com → se actualiza al instante con cada commit,
+  //     SIN depender del deploy de GitHub Pages (que a veces falla o se atrasa).
+  //  2) la copia local publicada por Pages → respaldo por si raw no responde.
+  // Esto evita quedar con una dirección vieja cuando el deploy de Pages falla.
+  const fuentes=[];
+  // Deducir usuario/repo desde la URL de esta página (usuario.github.io/repo/)
+  try{
+    const host=location.hostname;               // alernv-cloud.github.io
+    const usuario=host.split('.')[0];
+    const partes=location.pathname.split('/').filter(Boolean);
+    const repo=partes.length?partes[0]:'';
+    if(usuario && repo){
+      fuentes.push(`https://raw.githubusercontent.com/${usuario}/${repo}/main/direccion.json?t=`+Date.now());
+    }
+  }catch(e){}
+  fuentes.push('direccion.json?t='+Date.now()); // respaldo local (Pages)
+
+  let mejor=null, mejorFecha='';
+  for(const f of fuentes){
+    try{
+      const r=await fetch(f,{cache:'no-store'});
+      if(!r.ok) continue;
+      const d=await r.json();
+      if(d && d.url && d.url.startsWith('http')){
+        const fecha=d.actualizado||'';
+        // Nos quedamos con la dirección de fecha más reciente
+        if(!mejor || fecha>mejorFecha){ mejor=d.url; mejorFecha=fecha; }
+      }
+    }catch(e){ /* probar la siguiente fuente */ }
+  }
+  if(!mejor) throw new Error('sin url');
+  return mejor;
 }
 
 async function sistemaVivo(url){
